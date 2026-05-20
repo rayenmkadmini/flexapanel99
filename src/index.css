@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Cairo', 'Tajawal', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+  }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+  }
+}
+
+html {
+  overflow-x: hidden;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.8);
+}
+
+.glow-effect {
+  box-shadow: 0 0 25px -5px var(--glow-color, rgba(59, 130, 246, 0.5));
+}
+
+/* Light mode compatibility for the existing dark-first Tailwind classes. */
+html:not(.dark) body {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+html:not(.dark) [class*="bg-slate-950"] {
+  background-color: #f8fafc !important;
+}
+
+html:not(.dark) [class*="bg-slate-900"] {
+  background-color: #ffffff !important;
+}
+
+html:not(.dark) [class*="bg-slate-800"] {
+  background-color: #f1f5f9 !important;
+}
+
+html:not(.dark) [class*="bg-slate-700"] {
+  background-color: #e2e8f0 !important;
+}
+
+html:not(.dark) [class*="border-slate-800"],
+html:not(.dark) [class*="border-slate-700"] {
+  border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) [class*="text-white"],
+html:not(.dark) [class*="text-slate-100"],
+html:not(.dark) [class*="text-slate-200"],
+html:not(.dark) [class*="text-slate-300"] {
+  color: #0f172a !important;
+}
+
+html:not(.dark) [class*="text-slate-400"],
+html:not(.dark) [class*="text-slate-500"] {
+  color: #475569 !important;
+}
+
+html:not(.dark) input,
+html:not(.dark) select,
+html:not(.dark) textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) [class*="bg-blue-"][class*="text-white"],
+html:not(.dark) [class*="bg-indigo-"][class*="text-white"],
+html:not(.dark) [class*="bg-purple-"][class*="text-white"],
+html:not(.dark) [class*="bg-emerald-"][class*="text-white"],
+html:not(.dark) [class*="bg-rose-"][class*="text-white"],
+html:not(.dark) [class*="from-blue-"][class*="text-white"],
+html:not(.dark) [class*="from-indigo-"][class*="text-white"],
+html:not(.dark) [class*="from-emerald-"][class*="text-white"],
+html:not(.dark) [class*="from-rose-"][class*="text-white"] {
+  color: #ffffff !important;
+}
