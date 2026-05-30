@@ -22,6 +22,9 @@ export interface User {
 
 export interface Service {
   id: string;
+  providerId?: string;
+  providerName?: string;
+  externalServiceId?: string | number;
   categoryId: string;
   categoryName: string;
   name: string;
@@ -37,6 +40,8 @@ export interface Service {
 
 export interface Order {
   id: string;
+  providerId?: string;
+  externalOrderId?: string | number;
   userId: string;
   serviceName: string;
   linkOrTarget: string;
@@ -83,6 +88,7 @@ export interface ConnectedProvider {
   name: string;
   apiUrl: string;
   apiKey: string;
+  proxyUrl?: string;
   balance?: string;
   currency?: string;
   isActive: boolean;

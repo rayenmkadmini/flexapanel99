@@ -7,14 +7,14 @@ export const MassOrderView: React.FC = () => {
   const [massText, setMassText] = useState('');
   const [log, setLog] = useState<{ text: string; type: 'success' | 'error' }[]>([]);
 
-  const handleMassSubmit = (e: React.FormEvent) => {
+  const handleMassSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!massText.trim()) return;
 
     const lines = massText.split('\n');
     const newLogs: { text: string; type: 'success' | 'error' }[] = [];
 
-    lines.forEach((line, idx) => {
+    for (const [idx, line] of lines.entries()) {
       if (!line.trim()) return;
       const parts = line.split('|').map(p => p.trim());
       if (parts.length < 3) {
@@ -33,13 +33,13 @@ export const MassOrderView: React.FC = () => {
         return;
       }
 
-      const res = placeOrder(srv, link, qty);
+      const res = await placeOrder(srv, link, qty);
       if (res.success) {
         newLogs.push({ text: `السطر #${idx + 1}: تم طلب ${srv.name} (${qty}) بنجاح!`, type: 'success' });
       } else {
         newLogs.push({ text: `السطر #${idx + 1}: فشل (${res.error})`, type: 'error' });
       }
-    });
+    }
 
     setLog(newLogs);
     setMassText('');

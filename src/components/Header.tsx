@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Eye, EyeOff, Bell, Sun, Moon, Globe, DollarSign, LogOut, LogIn, CheckCircle2, UserCheck, Star } from 'lucide-react';
+import { Eye, EyeOff, Bell, Sun, Moon, Globe, DollarSign, LogOut, LogIn, CheckCircle2, UserCheck, Star, Search, Command, ArrowUpRight, X, Wallet } from 'lucide-react';
 import { Currency, Language } from '../types';
 
 export const Header: React.FC = () => {
@@ -20,17 +20,86 @@ export const Header: React.FC = () => {
     setHideBalance,
     setCurrentView,
     deposits,
-    tickets
+    tickets,
+    services
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showCurrMenu, setShowCurrMenu] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
 
   const pendingDeposits = deposits.filter(d => d.status === 'pending');
   const openTickets = tickets.filter(tk => tk.status === 'open');
   const notifCount = (currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? pendingDeposits.length : 0) + openTickets.length;
   const logoUrl = settings.logoUrl || '/Flogo.svg';
+
+  const commandPages = useMemo(() => {
+    const basePages = [
+      { id: 'dashboard', label: 'لوحة المعلومات', group: 'روابط رئيسية' },
+      { id: 'newOrder', label: 'طلب جديد', group: 'طلبات' },
+      { id: 'massOrder', label: 'طلبات جماعية', group: 'طلبات' },
+      { id: 'orderHistory', label: 'سجل الطلبات', group: 'طلبات' },
+      { id: 'addBalance', label: 'إضافة رصيد', group: 'الشحن' },
+      { id: 'digitalStore', label: 'متجر الحسابات', group: 'متجر' },
+      { id: 'tickets', label: 'الدعم الفني', group: 'مساعدة' },
+      { id: 'profile', label: 'تعديل البروفيل', group: 'الحساب' },
+      { id: 'api', label: 'API', group: 'ربط' },
+      { id: 'aiAutomation', label: 'AI Automation', group: 'أتمتة' },
+    ];
+
+    if (currentUser?.role === 'admin' || currentUser?.role === 'superadmin') {
+      basePages.unshift({ id: 'adminPanel', label: 'Admin Panel', group: 'إدارة' });
+    }
+
+    return basePages;
+  }, [currentUser?.role]);
+
+  const commandResults = useMemo(() => {
+    const query = commandQuery.trim().toLowerCase();
+    const matchedPages = commandPages.filter(page => !query || page.label.toLowerCase().includes(query) || page.group.toLowerCase().includes(query));
+    const matchedServices = services
+      .filter(service => {
+        const publicId = String(service.externalServiceId || service.id).toLowerCase();
+        return !query ||
+          service.name.toLowerCase().includes(query) ||
+          service.categoryName.toLowerCase().includes(query) ||
+          service.id.toLowerCase().includes(query) ||
+          publicId.includes(query);
+      })
+      .slice(0, 6)
+      .map(service => ({
+        id: service.isDigitalGood ? 'digitalStore' : 'newOrder',
+        label: service.name,
+        group: service.categoryName,
+        publicId: service.externalServiceId || service.id,
+        serviceId: service.id
+      }));
+
+    return { matchedPages: matchedPages.slice(0, 8), matchedServices };
+  }, [commandPages, commandQuery, services]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setShowCommand(true);
+      }
+      if (event.key === 'Escape') {
+        setShowCommand(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const goToView = (viewId: string) => {
+    setCurrentView(viewId);
+    setShowCommand(false);
+    setCommandQuery('');
+  };
 
   const renderTierBadge = () => {
     if (!currentUser) return null;
@@ -111,6 +180,28 @@ export const Header: React.FC = () => {
 
         {/* Action Controls & Dropdowns */}
         <div className="relative z-[90] flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto sm:overflow-visible no-scrollbar pb-1 sm:pb-0 justify-start sm:justify-end">
+
+          {/* Command Center */}
+          <button
+            onClick={() => { setShowCommand(true); setShowCurrMenu(false); setShowLangMenu(false); setShowNotifications(false); }}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700/80 text-slate-200 px-3 py-1.5 rounded-xl border border-slate-700 text-xs font-bold transition-all shrink-0"
+            title="بحث سريع Ctrl+K"
+          >
+            <Search className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden sm:inline">بحث سريع</span>
+            <span className="hidden lg:inline text-[10px] text-slate-500 border border-slate-700 rounded px-1">Ctrl K</span>
+          </button>
+
+          {currentUser && currentUser.balance < 5 && (
+            <button
+              onClick={() => setCurrentView('addBalance')}
+              className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-3 py-1.5 rounded-xl border border-amber-500/30 text-xs font-bold transition-all shrink-0"
+              title="رصيدك منخفض"
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              <span>رصيد منخفض</span>
+            </button>
+          )}
           
           {/* Currency Dropdown */}
           <div className="relative">
@@ -246,6 +337,71 @@ export const Header: React.FC = () => {
 
         </div>
       </div>
+
+      {showCommand && (
+        <div className="fixed inset-0 z-[10000] bg-black/70 backdrop-blur-sm p-3 sm:p-6 flex items-start justify-center pt-24 animate-fadeIn">
+          <div className="w-full max-w-2xl bg-slate-900/95 border border-slate-700 rounded-3xl shadow-2xl shadow-black/50 overflow-hidden ring-1 ring-white/5">
+            <div className="p-4 border-b border-slate-800 flex items-center gap-3">
+              <Command className="w-5 h-5 text-blue-400 shrink-0" />
+              <input
+                value={commandQuery}
+                onChange={e => setCommandQuery(e.target.value)}
+                autoFocus
+                placeholder="ابحث عن صفحة، خدمة، طلب، API..."
+                className="flex-1 bg-transparent text-white placeholder-slate-500 focus:outline-none text-sm"
+              />
+              <button
+                onClick={() => setShowCommand(false)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] overflow-y-auto p-3 space-y-4">
+              <div>
+                <div className="px-2 pb-2 text-[11px] font-black text-slate-500 uppercase">Pages rapides</div>
+                <div className="space-y-1">
+                  {commandResults.matchedPages.map(page => (
+                    <button
+                      key={page.id}
+                      onClick={() => goToView(page.id)}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-slate-800 text-right transition-colors group"
+                    >
+                      <div>
+                        <span className="block text-sm font-bold text-white">{page.label}</span>
+                        <span className="block text-[11px] text-slate-500">{page.group}</span>
+                      </div>
+                      <ArrowUpRight className="w-4 h-4 text-slate-500 group-hover:text-blue-400" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="px-2 pb-2 text-[11px] font-black text-slate-500 uppercase">Services</div>
+                <div className="space-y-1">
+                  {commandResults.matchedServices.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-500 bg-slate-800/40 rounded-2xl">لا توجد خدمات مطابقة</div>
+                  ) : commandResults.matchedServices.map(result => (
+                    <button
+                      key={result.serviceId}
+                      onClick={() => goToView(result.id)}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-slate-800 text-right transition-colors group"
+                    >
+                      <div className="min-w-0">
+                        <span className="block text-sm font-bold text-white truncate">#{result.publicId} | {result.label}</span>
+                        <span className="block text-[11px] text-blue-400 truncate">{result.group}</span>
+                      </div>
+                      <ArrowUpRight className="w-4 h-4 text-slate-500 group-hover:text-blue-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

@@ -312,9 +312,9 @@ export const INITIAL_SETTINGS: PaymentSettings = {
     tableName: 'flexapanel_data',
     isEnabled: true,
     autoSyncEnabled: true,
-    autoSyncIntervalMs: 1000,
+    autoSyncIntervalMs: 5000,
     autoPullEnabled: true,
-    autoPullIntervalMs: 1000
+    autoPullIntervalMs: 15000
   }
 };
 
@@ -323,18 +323,7 @@ export const INITIAL_PROVIDERS: ConnectedProvider[] = [
     id: 'prov_1',
     name: 'SMM Party (Main)',
     apiUrl: 'https://smmparty.com/api/v2',
-    apiKey: 'smm_party_live_key_998877665544332211',
-    balance: '100.84',
-    currency: 'USD',
-    isActive: true
-  },
-  {
-    id: 'prov_2',
-    name: 'Global SMM Server',
-    apiUrl: 'https://globalsmm.net/api/v2',
-    apiKey: 'glob_key_xyz123abc987',
-    balance: '45.20',
-    currency: 'USD',
+    apiKey: '47736b93671594885e4808fe06b61664',
     isActive: true
   }
 ];

@@ -7,20 +7,34 @@ export const DashboardView: React.FC = () => {
 
   // Quick order state
   const [selectedServiceId, setSelectedServiceId] = useState(services[0]?.id || '');
+  const [quickServiceSearch, setQuickServiceSearch] = useState('');
   const [targetLink, setTargetLink] = useState('');
   const [quantity, setQuantity] = useState<number>(1000);
 
-  const selectedService = services.find(s => s.id === selectedServiceId) || services[0];
+  const getServicePublicId = (service: typeof services[number]) => String(service.externalServiceId || service.id);
+  const quickServices = services.filter(service => {
+    if (service.isDigitalGood) return false;
+    const query = quickServiceSearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      service.id.toLowerCase().includes(query) ||
+      getServicePublicId(service).toLowerCase().includes(query) ||
+      service.name.toLowerCase().includes(query) ||
+      service.categoryName.toLowerCase().includes(query)
+    );
+  });
+
+  const selectedService = services.find(s => s.id === selectedServiceId) || quickServices[0] || services[0];
   const calculatedPrice = selectedService ? (quantity / 1000) * selectedService.ratePer1000 : 0;
 
-  const handleQuickSubmit = (e: React.FormEvent) => {
+  const handleQuickSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedService) return;
     if (!targetLink.trim()) {
       alert('الرجاء إدخال الرابط المستهدف');
       return;
     }
-    const res = placeOrder(selectedService, targetLink.trim(), Number(quantity));
+    const res = await placeOrder(selectedService, targetLink.trim(), Number(quantity));
     if (!res.success) {
       alert(res.error);
     } else {
@@ -170,8 +184,28 @@ export const DashboardView: React.FC = () => {
           <form onSubmit={handleQuickSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">اختر الخدمة السريعة</label>
+              <input
+                type="text"
+                value={quickServiceSearch}
+                onChange={e => {
+                  const value = e.target.value;
+                  setQuickServiceSearch(value);
+                  const query = value.trim().toLowerCase();
+                  const exactService = services.find(service =>
+                    !service.isDigitalGood &&
+                    (service.id.toLowerCase() === query || getServicePublicId(service).toLowerCase() === query)
+                  );
+                  if (exactService) {
+                    setSelectedServiceId(exactService.id);
+                    setQuantity(exactService.minQty);
+                  }
+                }}
+                placeholder="بحث سريع برقم الخدمة ID أو الاسم..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 mb-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-left text-sm"
+                dir="ltr"
+              />
               <select
-                value={selectedServiceId}
+                value={selectedService?.id || selectedServiceId}
                 onChange={e => {
                   setSelectedServiceId(e.target.value);
                   const s = services.find(srv => srv.id === e.target.value);
@@ -179,9 +213,9 @@ export const DashboardView: React.FC = () => {
                 }}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 font-medium"
               >
-                {services.filter(s => !s.isDigitalGood).map(s => (
+                {quickServices.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.name} - ({s.ratePer1000}$ / 1000)
+                    #{getServicePublicId(s)} | {s.name} - ({s.ratePer1000}$ / 1000)
                   </option>
                 ))}
               </select>

@@ -10,7 +10,14 @@ export const ServicesView: React.FC = () => {
   const categories = Array.from(new Set(services.map(s => s.categoryName)));
 
   const filtered = services.filter(s => {
-    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const query = searchTerm.toLowerCase().trim();
+    const publicId = String(s.externalServiceId || s.id).toLowerCase();
+    const matchesSearch = !query ||
+      s.id.toLowerCase().includes(query) ||
+      publicId.includes(query) ||
+      s.name.toLowerCase().includes(query) ||
+      s.categoryName.toLowerCase().includes(query) ||
+      s.description.toLowerCase().includes(query);
     const matchesCat = selectedCat === 'all' || s.categoryName === selectedCat;
     return matchesSearch && matchesCat;
   });
@@ -39,7 +46,7 @@ export const ServicesView: React.FC = () => {
             type="text"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder="ابحث عن خدمة (مثال: انستغرام، يوتيوب، نتفليكس)..."
+            placeholder="ابحث عن خدمة بالاسم أو برقم ID (مثال: 1234 أو انستغرام)..."
             className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pr-10 pl-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -80,7 +87,10 @@ export const ServicesView: React.FC = () => {
             <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300 font-medium">
               {filtered.map(s => (
                 <tr key={s.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="p-4 font-mono font-bold text-blue-400">{s.id}</td>
+                  <td className="p-4 font-mono font-bold text-blue-400">
+                    <div>#{s.externalServiceId || s.id}</div>
+                    {s.externalServiceId && <span className="block text-[10px] text-slate-500">Local: {s.id}</span>}
+                  </td>
                   <td className="p-4 space-y-1">
                     <span className="text-[10px] text-amber-400 font-bold block">{s.categoryName}</span>
                     <strong className="text-white text-sm font-bold block">{s.name}</strong>

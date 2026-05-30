@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { PlusCircle, Clock, Info, ShieldCheck, Zap, DollarSign, Layers } from 'lucide-react';
+import { PlusCircle, Clock, Info, ShieldCheck, Zap, DollarSign, Layers, Search } from 'lucide-react';
 
 export const NewOrderView: React.FC = () => {
   const { services, placeOrder, formatPrice, t, setCurrentView } = useApp();
@@ -12,14 +12,30 @@ export const NewOrderView: React.FC = () => {
   const filteredServices = smmServices.filter(s => s.categoryName === selectedCat);
 
   const [selectedServiceId, setSelectedServiceId] = useState<string>(filteredServices[0]?.id || '');
+  const [serviceSearch, setServiceSearch] = useState('');
   const [link, setLink] = useState('');
   const [quantity, setQuantity] = useState<number>(1000);
 
-  const activeService = smmServices.find(s => s.id === selectedServiceId) || filteredServices[0];
+  const getServicePublicId = (service: typeof smmServices[number]) => String(service.externalServiceId || service.id);
+  const serviceQuery = serviceSearch.trim().toLowerCase();
+  const searchableServices = serviceQuery
+    ? smmServices.filter(service => {
+        const publicId = getServicePublicId(service).toLowerCase();
+        return (
+          service.id.toLowerCase().includes(serviceQuery) ||
+          publicId.includes(serviceQuery) ||
+          service.name.toLowerCase().includes(serviceQuery) ||
+          service.categoryName.toLowerCase().includes(serviceQuery)
+        );
+      })
+    : filteredServices;
+
+  const activeService = smmServices.find(s => s.id === selectedServiceId) || searchableServices[0] || filteredServices[0];
   const calculatedPrice = activeService ? (quantity / 1000) * activeService.ratePer1000 : 0;
 
   const handleCategoryChange = (catName: string) => {
     setSelectedCat(catName);
+    setServiceSearch('');
     const srvs = smmServices.filter(s => s.categoryName === catName);
     if (srvs.length > 0) {
       setSelectedServiceId(srvs[0].id);
@@ -33,14 +49,29 @@ export const NewOrderView: React.FC = () => {
     if (s) setQuantity(s.minQty);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleServiceSearch = (value: string) => {
+    setServiceSearch(value);
+    const query = value.trim().toLowerCase();
+    if (!query) return;
+    const exactService = smmServices.find(service =>
+      service.id.toLowerCase() === query ||
+      getServicePublicId(service).toLowerCase() === query
+    );
+    if (exactService) {
+      setSelectedCat(exactService.categoryName);
+      setSelectedServiceId(exactService.id);
+      setQuantity(exactService.minQty);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeService) return;
     if (!link.trim()) {
       alert('الرجاء إدخال الرابط / الحساب المستهدف');
       return;
     }
-    const res = placeOrder(activeService, link.trim(), Number(quantity));
+    const res = await placeOrder(activeService, link.trim(), Number(quantity));
     if (!res.success) {
       alert(res.error);
     } else {
@@ -96,17 +127,33 @@ export const NewOrderView: React.FC = () => {
             {/* Service Select */}
             <div>
               <label className="block text-sm font-bold text-slate-300 mb-2">{t('order.service')}</label>
+              <div className="relative mb-3">
+                <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 pointer-events-none">
+                  <Search className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  value={serviceSearch}
+                  onChange={e => handleServiceSearch(e.target.value)}
+                  placeholder="ابحث برقم الخدمة ID أو اسم الخدمة..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-2xl pr-10 pl-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm font-mono text-left"
+                  dir="ltr"
+                />
+              </div>
               <select
-                value={selectedServiceId}
+                value={activeService?.id || selectedServiceId}
                 onChange={e => handleServiceChange(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3.5 text-white font-semibold focus:outline-none focus:border-blue-500 text-sm shadow-inner"
               >
-                {filteredServices.map(s => (
+                {searchableServices.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.name} - ({s.ratePer1000}$ / 1000)
+                    #{getServicePublicId(s)} | {s.name} - ({s.ratePer1000}$ / 1000)
                   </option>
                 ))}
               </select>
+              {searchableServices.length === 0 && (
+                <p className="text-xs text-rose-400 mt-2">لا توجد خدمة بهذا ID أو الاسم.</p>
+              )}
             </div>
 
             {/* Target Link */}
@@ -205,6 +252,9 @@ export const NewOrderView: React.FC = () => {
                     <Info className="w-4 h-4 text-blue-400" />
                     <span>وصف الخدمة وشروط التنفيذ:</span>
                   </span>
+                <div className="inline-flex items-center gap-2 text-[11px] text-blue-300 bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-xl font-mono">
+                  Service ID: #{getServicePublicId(activeService)}
+                </div>
                   <p className="text-xs text-slate-300 leading-relaxed bg-slate-800/40 p-3.5 rounded-xl border border-slate-700/50">
                     {activeService.description}
                   </p>

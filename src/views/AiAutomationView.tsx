@@ -31,10 +31,10 @@ export const AiAutomationView: React.FC = () => {
     setRecommendations(results.filter(r => r.qty >= r.srv.minQty));
   };
 
-  const handleApplyOrder = (srv: any, qty: number) => {
+  const handleApplyOrder = async (srv: any, qty: number) => {
     const link = prompt(`الرجاء إدخال رابط حساب ${platform}:`, 'https://');
     if (!link) return;
-    const res = placeOrder(srv, link, qty);
+    const res = await placeOrder(srv, link, qty);
     if (!res.success) {
       alert(res.error);
     } else {

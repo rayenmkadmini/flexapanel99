@@ -1,0 +1,9 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">FlexaPanel mark</title>
+  <rect width="128" height="128" rx="28" fill="#0f172a"/>
+  <path d="M20 78c7-20 19-27 35-18l18 11c11 7 22 2 31-15" stroke="#0b1115" stroke-width="16" stroke-linecap="round"/>
+  <path d="M20 78c7-20 19-27 35-18l18 11c11 7 22 2 31-15" stroke="#111827" stroke-width="11" stroke-linecap="round"/>
+  <path d="M26 91c15 9 30 3 43-18l11-17c8-12 19-18 32-10" stroke="#4f63b6" stroke-width="16" stroke-linecap="round"/>
+  <path d="M26 91c15 9 30 3 43-18l11-17c8-12 19-18 32-10" stroke="#5b6fd6" stroke-width="11" stroke-linecap="round"/>
+  <path d="M34 75c4-9 11-13 21-8l18 11c17 10 31 1 42-21" stroke="white" stroke-opacity="0.1" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { User, Service, Order, DepositRequest, Ticket, PaymentSettings, ConnectedProvider, PaymentGateway, LogEntry, Announcement, Currency, Language, Theme } from '../types';
 import { INITIAL_USERS, INITIAL_SERVICES, INITIAL_ORDERS, INITIAL_DEPOSITS, INITIAL_TICKETS, INITIAL_SETTINGS, INITIAL_PROVIDERS, INITIAL_LOGS, INITIAL_ANNOUNCEMENTS } from '../data/mockData';
 import { translations } from '../data/translations';
+import { getSupabaseClient as getBrowserSupabaseClient, isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from '../lib/supabaseClient';
 
 type ExchangeRates = {
   USD: number;
@@ -52,7 +53,7 @@ interface AppContextType {
 
   // Orders
   orders: Order[];
-  placeOrder: (service: Service, link: string, quantity: number) => { success: boolean; error?: string; order?: Order };
+  placeOrder: (service: Service, link: string, quantity: number) => Promise<{ success: boolean; error?: string; order?: Order }>;
   buyAccount: (service: Service) => { success: boolean; error?: string; order?: Order };
   requestRefill: (orderId: string) => void;
 
@@ -70,7 +71,7 @@ interface AppContextType {
   databaseStatus: string;
   testDatabaseConnection: () => Promise<boolean>;
   uploadDatabaseSnapshot: (silent?: boolean) => Promise<boolean>;
-  downloadDatabaseSnapshot: () => Promise<boolean>;
+  downloadDatabaseSnapshot: (silent?: boolean) => Promise<boolean>;
   addPaymentGateway: (gateway: Omit<PaymentGateway, 'id'>) => void;
   updatePaymentGateway: (id: string, gateway: Partial<PaymentGateway>) => void;
   deletePaymentGateway: (id: string) => void;
@@ -137,7 +138,7 @@ interface AppContextType {
 
   // Orders
   orders: Order[];
-  placeOrder: (service: Service, link: string, quantity: number) => { success: boolean; error?: string; order?: Order };
+  placeOrder: (service: Service, link: string, quantity: number) => Promise<{ success: boolean; error?: string; order?: Order }>;
   buyAccount: (service: Service) => { success: boolean; error?: string; order?: Order };
   requestRefill: (orderId: string) => void;
 
@@ -203,15 +204,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [orders, setOrders] = useState<Order[]>(() => getSaved('orders', INITIAL_ORDERS));
   const [deposits, setDeposits] = useState<DepositRequest[]>(() => getSaved('deposits', INITIAL_DEPOSITS));
   const [tickets, setTickets] = useState<Ticket[]>(() => getSaved('tickets', INITIAL_TICKETS));
-  const [settings, setSettings] = useState<PaymentSettings>(() => getSaved('settings', INITIAL_SETTINGS));
+  const [settings, setSettings] = useState<PaymentSettings>(() => {
+    const saved = getSaved<Partial<PaymentSettings>>('settings', {});
+    return {
+      ...INITIAL_SETTINGS,
+      ...saved,
+      database: {
+        ...INITIAL_SETTINGS.database!,
+        ...(saved.database || {}),
+        provider: 'supabase',
+        supabaseUrl: supabaseUrl || saved.database?.supabaseUrl || INITIAL_SETTINGS.database!.supabaseUrl,
+        supabaseAnonKey: supabaseAnonKey || saved.database?.supabaseAnonKey || INITIAL_SETTINGS.database!.supabaseAnonKey,
+        isEnabled: true,
+        autoSyncEnabled: saved.database?.autoSyncEnabled ?? true,
+        autoSyncIntervalMs: saved.database?.autoSyncIntervalMs || 5000,
+        autoPullEnabled: saved.database?.autoPullEnabled ?? true,
+        autoPullIntervalMs: saved.database?.autoPullIntervalMs || 15000
+      }
+    };
+  });
   const [logs, setLogs] = useState<LogEntry[]>(() => getSaved('logs', INITIAL_LOGS));
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => getSaved('announcements', INITIAL_ANNOUNCEMENTS));
-  const [providers, setProviders] = useState<ConnectedProvider[]>(() => getSaved('providers', INITIAL_PROVIDERS));
+  const [providers, setProviders] = useState<ConnectedProvider[]>(() => {
+    const savedProviders = getSaved<ConnectedProvider[]>('providers', INITIAL_PROVIDERS);
+    return savedProviders.map(provider => {
+      const hasOldDemoData = provider.apiKey === 'smm_party_live_key_998877665544332211' || provider.apiKey === 'glob_key_xyz123abc987';
+      if (!hasOldDemoData) return provider;
+      return {
+        ...provider,
+        apiKey: '',
+        balance: undefined,
+        currency: undefined,
+        isActive: false
+      };
+    });
+  });
   const [databaseStatus, setDatabaseStatus] = useState<string>('Local storage mode');
   const settingsRef = useRef(settings);
   const snapshotRef = useRef<any>(null);
   const autoSyncInFlightRef = useRef(false);
   const autoPullInFlightRef = useRef(false);
+  const supabaseBootstrappedRef = useRef(false);
+  const dirtySinceLastUploadRef = useRef(false);
+  const applyingRemoteSnapshotRef = useRef(false);
 
   useEffect(() => {
     // Production mode: Supabase is the only database backend.
@@ -220,14 +255,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const nextDb = {
         ...db,
         provider: 'supabase' as const,
-        supabaseUrl: db?.supabaseUrl || '',
-        supabaseAnonKey: db?.supabaseAnonKey || '',
+        supabaseUrl: supabaseUrl || db?.supabaseUrl || '',
+        supabaseAnonKey: supabaseAnonKey || db?.supabaseAnonKey || '',
         tableName: db?.tableName || 'flexapanel_data',
         isEnabled: true,
         autoSyncEnabled: db?.autoSyncEnabled ?? true,
-        autoSyncIntervalMs: db?.autoSyncIntervalMs || 1000,
+        autoSyncIntervalMs: db?.autoSyncIntervalMs || 5000,
         autoPullEnabled: db?.autoPullEnabled ?? true,
-        autoPullIntervalMs: db?.autoPullIntervalMs || 1000
+        autoPullIntervalMs: db?.autoPullIntervalMs || 15000
       };
 
       if (
@@ -275,14 +310,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { localStorage.setItem('shield_theme', JSON.stringify(theme)); }, [theme]);
   useEffect(() => { localStorage.setItem('shield_exchangeRates', JSON.stringify(exchangeRates)); }, [exchangeRates]);
   useEffect(() => { localStorage.setItem('shield_hideBalance', JSON.stringify(hideBalance)); }, [hideBalance]);
-  useEffect(() => { localStorage.setItem('shield_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem('shield_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
-  useEffect(() => { localStorage.setItem('shield_services', JSON.stringify(services)); }, [services]);
-  useEffect(() => { localStorage.setItem('shield_orders', JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem('shield_deposits', JSON.stringify(deposits)); }, [deposits]);
-  useEffect(() => { localStorage.setItem('shield_tickets', JSON.stringify(tickets)); }, [tickets]);
-  useEffect(() => { localStorage.setItem('shield_settings', JSON.stringify(settings)); }, [settings]);
-  useEffect(() => { localStorage.setItem('shield_logs', JSON.stringify(logs)); }, [logs]);
+  // Production data is stored in Supabase only. Local storage is kept only for UI preferences above.
+
+  useEffect(() => {
+    if (!supabaseBootstrappedRef.current || applyingRemoteSnapshotRef.current) return;
+    dirtySinceLastUploadRef.current = true;
+  }, [users, services, orders, deposits, tickets, settings, logs, announcements, providers]);
 
   useEffect(() => {
     const faviconUrl = settings.logoUrl || '/Flogo.svg';
@@ -479,7 +512,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const placeOrder = (service: Service, link: string, quantity: number) => {
+  const placeOrder = async (service: Service, link: string, quantity: number) => {
     if (!currentUser) return { success: false, error: 'الرجاء تسجيل الدخول أولاً' };
     if (quantity < service.minQty || quantity > service.maxQty) {
       return { success: false, error: `الكمية يجب أن تكون بين ${service.minQty} و ${service.maxQty}` };
@@ -488,6 +521,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const price = (quantity / 1000) * service.ratePer1000;
     if (currentUser.balance < price) {
       return { success: false, error: 'رصيدك الحالي غير كافٍ لإتمام هذا الطلب! الرجاء شحن الرصيد.' };
+    }
+
+    let externalOrderId: string | number | undefined;
+    if (service.providerId && service.externalServiceId) {
+      const provider = providers.find(p => p.id === service.providerId);
+      if (!provider || !provider.isActive) {
+        return { success: false, error: 'مزود الـ API لهذه الخدمة غير موجود أو غير مفعل.' };
+      }
+
+      try {
+        const apiResponse = await callProviderApi(provider, {
+          action: 'add',
+          service: String(service.externalServiceId),
+          link,
+          quantity: String(quantity)
+        });
+        if (apiResponse?.error) {
+          return { success: false, error: `API Error: ${apiResponse.error}` };
+        }
+        if (!apiResponse?.order) {
+          return { success: false, error: 'لم يرجع مزود الـ API رقم طلب صالح.' };
+        }
+        externalOrderId = apiResponse.order;
+      } catch (err: any) {
+        return { success: false, error: `فشل إرسال الطلب إلى API: ${err.message || 'Connection error'}` };
+      }
     }
 
     // Deduct balance and update spent + points
@@ -507,6 +566,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newOrder: Order = {
       id: 'ORD-' + Math.floor(1000 + Math.random() * 9000),
+      providerId: service.providerId,
+      externalOrderId,
       userId: currentUser.id,
       serviceName: service.name,
       linkOrTarget: link,
@@ -781,8 +842,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addLog(`حذف الإعلان ${annId}`, 'warning');
   };
 
-  const getSupabaseClient = () => {
+  const getConfiguredSupabaseClient = () => {
     const db = settings.database;
+    if (isSupabaseConfigured) return getBrowserSupabaseClient();
     if (!db?.supabaseUrl || !db?.supabaseAnonKey) return null;
     return createClient(db.supabaseUrl, db.supabaseAnonKey);
   };
@@ -799,7 +861,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     providers
   });
 
+  const sanitizeProviders = (providerList: ConnectedProvider[]) => providerList.map(provider => {
+    const hasOldDemoData = provider.apiKey === 'smm_party_live_key_998877665544332211' || provider.apiKey === 'glob_key_xyz123abc987';
+    if (!hasOldDemoData) return provider;
+    return {
+      ...provider,
+      apiKey: '',
+      balance: undefined,
+      currency: undefined,
+      isActive: false
+    };
+  });
+
   const applyDatabaseSnapshot = (snapshot: Partial<ReturnType<typeof getDatabaseSnapshot>>) => {
+    applyingRemoteSnapshotRef.current = true;
     if (snapshot.users) setUsers(snapshot.users);
     if (snapshot.services) setServices(snapshot.services);
     if (snapshot.orders) setOrders(snapshot.orders);
@@ -808,8 +883,93 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (snapshot.settings) setSettings(snapshot.settings);
     if (snapshot.logs) setLogs(snapshot.logs);
     if (snapshot.announcements) setAnnouncements(snapshot.announcements);
-    if (snapshot.providers) setProviders(snapshot.providers);
+    if (snapshot.providers) setProviders(sanitizeProviders(snapshot.providers));
+    window.setTimeout(() => {
+      applyingRemoteSnapshotRef.current = false;
+    }, 0);
   };
+
+  const applyDatabaseRecord = (key: string, value: unknown) => {
+    applyingRemoteSnapshotRef.current = true;
+
+    switch (key) {
+      case 'users':
+        if (Array.isArray(value)) setUsers(value as User[]);
+        break;
+      case 'services':
+        if (Array.isArray(value)) setServices(value as Service[]);
+        break;
+      case 'orders':
+        if (Array.isArray(value)) setOrders(value as Order[]);
+        break;
+      case 'deposits':
+        if (Array.isArray(value)) setDeposits(value as DepositRequest[]);
+        break;
+      case 'tickets':
+        if (Array.isArray(value)) setTickets(value as Ticket[]);
+        break;
+      case 'settings':
+        if (value && typeof value === 'object') setSettings(value as PaymentSettings);
+        break;
+      case 'logs':
+        if (Array.isArray(value)) setLogs(value as LogEntry[]);
+        break;
+      case 'announcements':
+        if (Array.isArray(value)) setAnnouncements(value as Announcement[]);
+        break;
+      case 'providers':
+        if (Array.isArray(value)) setProviders(sanitizeProviders(value as ConnectedProvider[]));
+        break;
+      default:
+        break;
+    }
+
+    window.setTimeout(() => {
+      applyingRemoteSnapshotRef.current = false;
+      dirtySinceLastUploadRef.current = false;
+    }, 0);
+  };
+
+  useEffect(() => {
+    const db = settings.database;
+    if (!db?.isEnabled || db.provider !== 'supabase') return;
+    if (!db.supabaseUrl || !db.supabaseAnonKey) return;
+
+    const supabase = getConfiguredSupabaseClient();
+    if (!supabase) return;
+
+    const tableName = db.tableName || 'flexapanel_data';
+    const channel = supabase
+      .channel(`flexapanel-records-realtime-${tableName}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tableName },
+        (payload) => {
+          const row = (payload.new || payload.old) as { key?: string; value?: unknown } | null;
+          if (!row?.key) return;
+
+          if (payload.eventType === 'DELETE') {
+            setDatabaseStatus(`Realtime delete received for ${row.key}`);
+            return;
+          }
+
+          applyDatabaseRecord(row.key, row.value);
+          setDatabaseStatus(`Realtime updated ${row.key} at ${new Date().toLocaleTimeString()}`);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setDatabaseStatus('Supabase Realtime connected');
+        }
+        if (status === 'CHANNEL_ERROR') {
+          setDatabaseStatus('Supabase Realtime error: enable realtime publication for flexapanel_records');
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [settings.database?.isEnabled, settings.database?.supabaseUrl, settings.database?.supabaseAnonKey, settings.database?.tableName]);
 
   const testDatabaseConnection = async (): Promise<boolean> => {
     const db = settings.database;
@@ -817,7 +977,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDatabaseStatus('Database is disabled or provider is not Supabase');
       return false;
     }
-    const supabase = getSupabaseClient();
+    const supabase = getConfiguredSupabaseClient();
     if (!supabase) {
       setDatabaseStatus('Missing Supabase URL or anon key');
       return false;
@@ -835,7 +995,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const uploadDatabaseSnapshot = async (silent = false): Promise<boolean> => {
     const db = settings.database;
-    const supabase = getSupabaseClient();
+    const supabase = getConfiguredSupabaseClient();
     if (!db?.isEnabled || db.provider !== 'supabase' || !supabase) {
       setDatabaseStatus('Enable Supabase and add credentials first');
       return false;
@@ -853,15 +1013,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
     const lastSync = new Date().toISOString();
+    dirtySinceLastUploadRef.current = false;
     setSettings(prev => ({ ...prev, database: { ...(prev.database || db), lastSync } }));
     setDatabaseStatus(`${silent ? 'Auto uploaded' : 'Uploaded'} to Supabase at ${lastSync}`);
     if (!silent) addLog('رفع بيانات الموقع إلى Supabase', 'success');
     return true;
   };
 
-  const downloadDatabaseSnapshot = async (): Promise<boolean> => {
+  const downloadDatabaseSnapshot = async (silent = false): Promise<boolean> => {
     const db = settings.database;
-    const supabase = getSupabaseClient();
+    const supabase = getConfiguredSupabaseClient();
     if (!db?.isEnabled || db.provider !== 'supabase' || !supabase) {
       setDatabaseStatus('Enable Supabase and add credentials first');
       return false;
@@ -877,21 +1038,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return acc;
     }, {});
     applyDatabaseSnapshot(snapshot);
-    setDatabaseStatus('Downloaded latest data from Supabase');
-    addLog('تحميل بيانات الموقع من Supabase', 'success');
+    dirtySinceLastUploadRef.current = false;
+    setDatabaseStatus(`${silent ? 'Auto downloaded' : 'Downloaded'} latest data from Supabase`);
+    if (!silent) addLog('تحميل بيانات الموقع من Supabase', 'success');
     return true;
   };
+
+  useEffect(() => {
+    const db = settings.database;
+    if (!db?.isEnabled || db.provider !== 'supabase') return;
+    if (!db.supabaseUrl || !db.supabaseAnonKey) return;
+
+    let cancelled = false;
+
+    const bootstrapSupabase = async () => {
+      try {
+        const supabase = createClient(db.supabaseUrl, db.supabaseAnonKey);
+        const tableName = db.tableName || 'flexapanel_data';
+        const { data, error } = await supabase.from(tableName).select('key,value');
+        if (cancelled) return;
+
+        if (error) {
+          setDatabaseStatus(`Supabase bootstrap failed: ${error.message}`);
+          supabaseBootstrappedRef.current = true;
+          dirtySinceLastUploadRef.current = true;
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          supabaseBootstrappedRef.current = true;
+          dirtySinceLastUploadRef.current = true;
+          setDatabaseStatus('Supabase empty: first seed will upload automatically');
+          return;
+        }
+
+        const snapshot = data.reduce((acc: Record<string, any>, row: any) => {
+          acc[row.key] = row.value;
+          return acc;
+        }, {});
+        applyDatabaseSnapshot(snapshot);
+        supabaseBootstrappedRef.current = true;
+        dirtySinceLastUploadRef.current = false;
+        setDatabaseStatus('Supabase loaded as source of truth');
+      } catch (err: any) {
+        if (cancelled) return;
+        setDatabaseStatus(`Supabase bootstrap error: ${err.message || 'Unknown error'}`);
+        supabaseBootstrappedRef.current = true;
+      }
+    };
+
+    bootstrapSupabase();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.database?.supabaseUrl, settings.database?.supabaseAnonKey, settings.database?.tableName]);
 
   useEffect(() => {
     const db = settings.database;
     if (!db?.isEnabled || db.provider !== 'supabase' || db.autoSyncEnabled === false) return;
     if (!db.supabaseUrl || !db.supabaseAnonKey) return;
 
-    const intervalMs = Math.max(1000, Number(db.autoSyncIntervalMs || 1000));
-    setDatabaseStatus(`Auto sync Supabase active: every ${intervalMs / 1000}s`);
+    const intervalMs = Math.max(5000, Number(db.autoSyncIntervalMs || 5000));
+    setDatabaseStatus(`Auto sync Supabase active: every ${Math.round(intervalMs / 1000)}s`);
 
     const timer = window.setInterval(async () => {
       if (autoSyncInFlightRef.current) return;
+      if (!supabaseBootstrappedRef.current || !dirtySinceLastUploadRef.current) return;
       const currentDb = settingsRef.current.database;
       const snapshot = snapshotRef.current;
       if (!currentDb?.isEnabled || currentDb.provider !== 'supabase' || currentDb.autoSyncEnabled === false || !snapshot) return;
@@ -912,7 +1125,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return;
         }
         const lastSync = new Date().toISOString();
-        setSettings(prev => ({ ...prev, database: { ...(prev.database || currentDb), lastSync } }));
+        dirtySinceLastUploadRef.current = false;
         setDatabaseStatus(`Auto synced to Supabase at ${lastSync}`);
       } catch (err: any) {
         setDatabaseStatus(`Auto sync error: ${err.message || 'Unknown error'}`);
@@ -937,11 +1150,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!db?.isEnabled || db.provider !== 'supabase' || db.autoPullEnabled === false) return;
     if (!db.supabaseUrl || !db.supabaseAnonKey) return;
 
-    const intervalMs = Math.max(1000, Number(db.autoPullIntervalMs || 1000));
-    setDatabaseStatus(`Auto upload/download Supabase active: every ${intervalMs / 1000}s`);
+    const intervalMs = Math.max(15000, Number(db.autoPullIntervalMs || 15000));
+    setDatabaseStatus(`Auto upload/download Supabase active: every ${Math.round(intervalMs / 1000)}s`);
 
     const timer = window.setInterval(async () => {
       if (autoPullInFlightRef.current) return;
+      if (!supabaseBootstrappedRef.current) return;
+      if (dirtySinceLastUploadRef.current || autoSyncInFlightRef.current) return;
       const currentDb = settingsRef.current.database;
       if (!currentDb?.isEnabled || currentDb.provider !== 'supabase' || currentDb.autoPullEnabled === false) return;
       if (!currentDb.supabaseUrl || !currentDb.supabaseAnonKey) return;
@@ -996,22 +1211,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addLog(`حذف مزود API: ${id}`, 'danger');
   };
 
+  const callProviderApi = async (prov: ConnectedProvider, params: Record<string, string>) => {
+    const supabaseProxyUrl = `${settingsRef.current.database?.supabaseUrl || 'https://iinakypsmwooxnjmmvfz.supabase.co'}/functions/v1/smm-proxy`;
+    const proxyCandidates = [
+      prov.proxyUrl,
+      supabaseProxyUrl,
+      '/api/smm-proxy',
+      'https://panel.flexashop.shop/api/smm-proxy',
+      '/smm-proxy.php'
+    ].filter(Boolean) as string[];
+
+    const errors: string[] = [];
+
+    for (const proxyUrl of proxyCandidates) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 30000);
+
+      try {
+        const response = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            apiUrl: prov.apiUrl,
+            apiKey: prov.apiKey,
+            ...params
+          }),
+          signal: controller.signal
+        });
+
+        window.clearTimeout(timeout);
+
+        const text = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { raw: text };
+        }
+
+        if (!response.ok) {
+          errors.push(`${proxyUrl}: ${data?.error || data?.raw || `HTTP ${response.status}`}`);
+          continue;
+        }
+        if (data?.error) {
+          errors.push(`${proxyUrl}: ${data.error}`);
+          continue;
+        }
+        if (data?.raw !== undefined) {
+          errors.push(`${proxyUrl}: invalid JSON response (${String(data.raw).slice(0, 120)})`);
+          continue;
+        }
+        return data;
+      } catch (error: any) {
+        window.clearTimeout(timeout);
+        errors.push(`${proxyUrl}: ${error?.name === 'AbortError' ? 'timeout' : error?.message || 'connection failed'}`);
+      }
+    }
+
+    // Last fallback: direct request. This only works if the provider allows browser CORS.
+    try {
+      const directBody = new URLSearchParams({ key: prov.apiKey, ...params });
+      const response = await fetch(prov.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'Accept': 'application/json'
+        },
+        body: directBody
+      });
+      const data = await response.json();
+      if (!response.ok || data?.error) throw new Error(data?.error || `HTTP ${response.status}`);
+      return data;
+    } catch (error: any) {
+      errors.push(`direct ${prov.apiUrl}: ${error?.message || 'blocked by CORS'}`);
+    }
+
+    throw new Error(`API connection failed. ${errors.join(' | ')}`);
+  };
+
   const syncProviderServices = async (providerId: string): Promise<boolean> => {
     const prov = providers.find(p => p.id === providerId);
     if (!prov || !prov.apiUrl) return false;
 
     try {
       addLog(`جاري مزامنة خدمات المزود: ${prov.name}...`, 'info');
-      const body = new URLSearchParams({ key: prov.apiKey, action: 'services' });
-      const res = await fetch(prov.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-          'Accept': 'application/json'
-        },
-        body
-      });
-      const data = await res.json();
+      const data = await callProviderApi(prov, { action: 'services' });
       if (!Array.isArray(data)) {
         addLog(`فشل في استلام صيغة صحيحة من ${prov.name}`, 'danger');
         return false;
@@ -1020,8 +1307,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Convert imported services to local services format
       const imported: Service[] = data.map((item: any) => ({
         id: `api_${prov.id}_${item.service || Date.now() + Math.random()}`,
+        providerId: prov.id,
+        providerName: prov.name,
+        externalServiceId: item.service,
         categoryId: `cat_${item.category || 'imported'}`,
-        categoryName: `${prov.name} - ${item.category || 'عام'}`,
+        categoryName: item.category || 'عام',
         name: item.name || 'خدمة مستوردة',
         ratePer1000: Number(item.rate || 1.0),
         minQty: Number(item.min || 100),
@@ -1050,16 +1340,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!prov || !prov.apiUrl) return false;
 
     try {
-      const body = new URLSearchParams({ key: prov.apiKey, action: 'balance' });
-      const res = await fetch(prov.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-          'Accept': 'application/json'
-        },
-        body
-      });
-      const data = await res.json();
+      const data = await callProviderApi(prov, { action: 'balance' });
       if (data && data.balance !== undefined) {
         updateProvider(prov.id, { balance: String(data.balance), currency: data.currency || 'USD' });
         addLog(`تم تحديث رصيد المزود ${prov.name}: ${data.balance} ${data.currency || '$'}`, 'success');

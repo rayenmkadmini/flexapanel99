@@ -91,7 +91,12 @@ export const DigitalStoreView: React.FC = () => {
 
               <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
                 <div className="space-y-3">
-                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">{item.categoryName}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">{item.categoryName}</span>
+                    <span className="text-[10px] bg-blue-500/10 text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-lg font-mono">
+                      ID #{item.externalServiceId || item.id}
+                    </span>
+                  </div>
                   <h3 className="text-base font-extrabold text-white leading-snug">{item.name}</h3>
                   <p className="text-xs text-slate-300 leading-relaxed bg-slate-800/40 p-3.5 rounded-xl border border-slate-700/50">
                     {item.description}

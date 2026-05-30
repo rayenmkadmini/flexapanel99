@@ -65,9 +65,9 @@ export const AdminPanelView: React.FC = () => {
   const [dbKey, setDbKey] = useState(settings.database?.supabaseAnonKey || '');
   const [dbTable, setDbTable] = useState(settings.database?.tableName || 'flexapanel_data');
   const [dbAutoSync, setDbAutoSync] = useState(settings.database?.autoSyncEnabled ?? true);
-  const [dbAutoSyncMs, setDbAutoSyncMs] = useState(settings.database?.autoSyncIntervalMs || 1000);
+  const [dbAutoSyncMs, setDbAutoSyncMs] = useState(settings.database?.autoSyncIntervalMs || 5000);
   const [dbAutoPull, setDbAutoPull] = useState(settings.database?.autoPullEnabled ?? true);
-  const [dbAutoPullMs, setDbAutoPullMs] = useState(settings.database?.autoPullIntervalMs || 1000);
+  const [dbAutoPullMs, setDbAutoPullMs] = useState(settings.database?.autoPullIntervalMs || 15000);
   const [rateUsd, setRateUsd] = useState<number>(exchangeRates.USD);
   const [rateEur, setRateEur] = useState<number>(exchangeRates.EUR);
   const [rateTnd, setRateTnd] = useState<number>(exchangeRates.TND);
@@ -102,6 +102,7 @@ export const AdminPanelView: React.FC = () => {
   const [provName, setProvName] = useState('');
   const [provUrl, setProvUrl] = useState('https://smmparty.com/api/v2');
   const [provKey, setProvKey] = useState('');
+  const [provProxyUrl, setProvProxyUrl] = useState('https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy');
   const [bulkProvidersText, setBulkProvidersText] = useState('');
 
   // Super admin universal add forms
@@ -136,6 +137,67 @@ export const AdminPanelView: React.FC = () => {
     }))
     .sort((a, b) => b.sales - a.sales)
     .slice(0, 5);
+
+  const downloadFile = (filename: string, content: string, type = 'text/plain') => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toCsv = (rows: Record<string, unknown>[]) => {
+    if (rows.length === 0) return 'No data available';
+    const headers = Object.keys(rows[0]);
+    const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    return [headers.join(','), ...rows.map(row => headers.map(header => escape(row[header])).join(','))].join('\n');
+  };
+
+  const copyText = async (text: string, label: string) => {
+    await navigator.clipboard.writeText(text);
+    alert(`${label} copied successfully`);
+  };
+
+  const stockDigitalCount = services.reduce((sum, service) => sum + (service.accountsAvailable?.length || 0), 0);
+  const bannedUsersCount = users.filter(user => user.isBanned).length;
+  const lowBalanceUsersCount = users.filter(user => user.balance < 5).length;
+
+  const exportAdminReport = () => {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      domain: 'panel.flexashop.shop',
+      analytics: {
+        totalSales,
+        completedSales,
+        approvedDeposits,
+        completionRate,
+        pendingDepositRate,
+        activeUsersRate,
+        digitalServicesRate,
+        categories: categoryNames.length,
+        services: services.length,
+        users: users.length,
+        orders: orders.length
+      },
+      topServices: topServices.map(item => ({
+        id: item.service.id,
+        name: item.service.name,
+        category: item.service.categoryName,
+        orders: item.count,
+        sales: item.sales
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `flexashop-panel-report-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (!currentUser || (currentUser.role !== 'superadmin' && currentUser.role !== 'admin')) {
     return (
@@ -355,6 +417,19 @@ export const AdminPanelView: React.FC = () => {
       {/* Content 0: Analytics */}
       {activeTab === 'analytics' && (
         <div className="space-y-6">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-black text-white">Pro Panel Intelligence</h3>
+              <p className="text-xs text-slate-400 mt-1">مركز تحسين سريع: بحث عالمي، مراقبة رصيد، وتحميل تقرير JSON للإدارة.</p>
+            </div>
+            <button
+              onClick={exportAdminReport}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-3 rounded-2xl text-xs transition-all shadow-lg"
+            >
+              Export rapport JSON
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {[
               { label: 'Ventes totales', value: formatPrice(totalSales), hint: 'كل الطلبات', color: 'text-emerald-400' },
@@ -411,6 +486,50 @@ export const AdminPanelView: React.FC = () => {
                 <div className="flex justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700"><span>Catégories</span><strong className="text-purple-400">{categoryNames.length}</strong></div>
                 <div className="flex justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700"><span>Services</span><strong className="text-rose-400">{services.length}</strong></div>
               </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-extrabold text-white">20 outils Pro supplémentaires</h3>
+                <p className="text-xs text-slate-400 mt-1">Actions rapides pour audit, export, monitoring, support et maintenance.</p>
+              </div>
+              <span className="text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-xl font-mono">20 tools</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {[
+                { title: 'Export users CSV', desc: `${users.length} comptes`, action: () => downloadFile('users.csv', toCsv(users.map(u => ({ id: u.id, username: u.username, email: u.email, whatsapp: u.whatsapp, role: u.role, balance: u.balance }))), 'text/csv') },
+                { title: 'Export orders CSV', desc: `${orders.length} commandes`, action: () => downloadFile('orders.csv', toCsv(orders.map(o => ({ id: o.id, service: o.serviceName, quantity: o.quantity, price: o.pricePaid, status: o.status }))), 'text/csv') },
+                { title: 'Export services CSV', desc: `${services.length} services`, action: () => downloadFile('services.csv', toCsv(services.map(s => ({ id: s.id, category: s.categoryName, name: s.name, rate: s.ratePer1000, min: s.minQty, max: s.maxQty }))), 'text/csv') },
+                { title: 'Export deposits CSV', desc: `${deposits.length} dépôts`, action: () => downloadFile('deposits.csv', toCsv(deposits.map(d => ({ id: d.id, username: d.username, gateway: d.gateway, amount: d.amount, status: d.status }))), 'text/csv') },
+                { title: 'Export report JSON', desc: 'rapport complet', action: exportAdminReport },
+                { title: 'Copy API endpoint', desc: 'panel.flexashop.shop', action: () => copyText('https://panel.flexashop.shop/api/v2', 'API endpoint') },
+                { title: 'Copy WhatsApp link', desc: '+21695989977', action: () => copyText('https://wa.me/21695989977', 'WhatsApp link') },
+                { title: 'Supabase upload', desc: 'sync now', action: () => uploadDatabaseSnapshot(true) },
+                { title: 'Supabase download', desc: 'pull now', action: () => downloadDatabaseSnapshot(true) },
+                { title: 'Test database', desc: 'connection check', action: testDatabaseConnection },
+                { title: 'Sync API balances', desc: `${providers.length} providers`, action: () => providers.filter(p => p.isActive).forEach(p => syncProviderBalance(p.id)) },
+                { title: 'Sync API services', desc: 'import services', action: () => providers.filter(p => p.isActive).forEach(p => syncProviderServices(p.id)) },
+                { title: 'Open add service', desc: 'new service', action: () => setShowAddServiceModal(true) },
+                { title: 'Open add provider', desc: 'new API panel', action: () => { setEditProvId(null); setProvName(''); setProvUrl('https://smmparty.com/api/v2'); setProvKey(''); setProvProxyUrl('https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy'); setShowAddProvModal(true); } },
+                { title: 'Open announcements', desc: 'publish update', action: () => setShowAddAnnModal(true) },
+                { title: 'Low balance users', desc: `${lowBalanceUsersCount} users`, action: () => alert(`${lowBalanceUsersCount} users have balance under 5$`) },
+                { title: 'Banned users', desc: `${bannedUsersCount} comptes`, action: () => alert(`${bannedUsersCount} banned users`) },
+                { title: 'Open tickets', desc: `${tickets.filter(t => t.status === 'open').length} tickets`, action: () => setActiveTab('tickets') },
+                { title: 'Pending deposits', desc: `${deposits.filter(d => d.status === 'pending').length} dépôts`, action: () => setActiveTab('deposits') },
+                { title: 'Digital stock', desc: `${stockDigitalCount} comptes`, action: () => setActiveTab('services') }
+              ].map(tool => (
+                <button
+                  key={tool.title}
+                  onClick={() => tool.action()}
+                  className="bg-slate-800/70 hover:bg-slate-800 border border-slate-700 rounded-2xl p-4 text-right transition-all hover:border-blue-500/40"
+                >
+                  <span className="text-sm font-black text-white block">{tool.title}</span>
+                  <span className="text-[11px] text-slate-400 mt-1 block">{tool.desc}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -530,7 +649,7 @@ export const AdminPanelView: React.FC = () => {
             <h4 className="text-base font-extrabold text-white mb-4">إضافات سريعة لكل أقسام الموقع</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <button onClick={() => setShowAddServiceModal(true)} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold py-4 rounded-2xl text-sm flex items-center justify-center gap-2"><Sliders className="w-5 h-5 text-blue-400" /> إضافة خدمة أو حساب</button>
-              <button onClick={() => { setEditProvId(null); setProvName(''); setProvUrl('https://smmparty.com/api/v2'); setProvKey(''); setShowAddProvModal(true); }} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold py-4 rounded-2xl text-sm flex items-center justify-center gap-2"><Server className="w-5 h-5 text-purple-400" /> إضافة مزود API</button>
+              <button onClick={() => { setEditProvId(null); setProvName(''); setProvUrl('https://smmparty.com/api/v2'); setProvKey(''); setProvProxyUrl('https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy'); setShowAddProvModal(true); }} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold py-4 rounded-2xl text-sm flex items-center justify-center gap-2"><Server className="w-5 h-5 text-purple-400" /> إضافة مزود API</button>
               <button onClick={() => setShowAddAnnModal(true)} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold py-4 rounded-2xl text-sm flex items-center justify-center gap-2"><Bell className="w-5 h-5 text-amber-400" /> إضافة إعلان</button>
             </div>
           </div>
@@ -610,6 +729,7 @@ export const AdminPanelView: React.FC = () => {
                 setProvName('');
                 setProvUrl('https://smmparty.com/api/v2');
                 setProvKey('');
+                setProvProxyUrl('https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy');
                 setShowAddProvModal(true);
               }}
               className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1 transition-all shadow-lg"
@@ -625,6 +745,7 @@ export const AdminPanelView: React.FC = () => {
               const formData = new FormData(e.currentTarget);
               const apiUrl = String(formData.get('smmPartyUrl') || '').trim();
               const apiKey = String(formData.get('smmPartyKey') || '').trim();
+              const proxyUrl = String(formData.get('smmPartyProxyUrl') || '').trim();
               const isActive = formData.get('smmPartyActive') === 'on';
               if (!apiUrl || !apiKey) {
                 alert('ضع رابط API و API Key الخاص بـ SMM Party أولاً.');
@@ -636,13 +757,17 @@ export const AdminPanelView: React.FC = () => {
                   name: 'SMM Party (Main)',
                   apiUrl,
                   apiKey,
-                  isActive
+                  proxyUrl: proxyUrl || undefined,
+                  isActive,
+                  balance: undefined,
+                  currency: undefined
                 });
               } else {
                 addProvider({
                   name: 'SMM Party (Main)',
                   apiUrl,
                   apiKey,
+                  proxyUrl: proxyUrl || undefined,
                   isActive
                 });
               }
@@ -688,6 +813,17 @@ export const AdminPanelView: React.FC = () => {
                   required
                 />
               </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-slate-300 mb-1">Proxy URL مهم جداً</label>
+                <input
+                  name="smmPartyProxyUrl"
+                  type="url"
+                  defaultValue={smmPartyProvider?.proxyUrl || 'https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy'}
+                  placeholder="https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono text-left"
+                  dir="ltr"
+                />
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -697,7 +833,11 @@ export const AdminPanelView: React.FC = () => {
               <button
                 type="button"
                 disabled={!smmPartyProvider}
-                onClick={() => smmPartyProvider && syncProviderBalance(smmPartyProvider.id)}
+                onClick={async () => {
+                  if (!smmPartyProvider) return;
+                  const ok = await syncProviderBalance(smmPartyProvider.id);
+                  alert(ok ? 'تم جلب الرصيد الحقيقي بنجاح.' : 'فشل جلب الرصيد. راجع Logs أو تأكد من Proxy/API Key.');
+                }}
                 className="bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-emerald-300 font-bold px-4 py-2.5 rounded-xl text-xs border border-emerald-500/30 transition-all"
               >
                 اختبار الاتصال / جلب الرصيد
@@ -705,7 +845,11 @@ export const AdminPanelView: React.FC = () => {
               <button
                 type="button"
                 disabled={!smmPartyProvider}
-                onClick={() => smmPartyProvider && syncProviderServices(smmPartyProvider.id)}
+                onClick={async () => {
+                  if (!smmPartyProvider) return;
+                  const ok = await syncProviderServices(smmPartyProvider.id);
+                  alert(ok ? 'تمت مزامنة خدمات SMM Party بنجاح.' : 'فشلت مزامنة الخدمات. راجع Logs أو تأكد من Proxy/API Key.');
+                }}
                 className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all"
               >
                 مزامنة خدمات SMM Party
@@ -759,7 +903,7 @@ export const AdminPanelView: React.FC = () => {
                 rows.forEach(row => {
                   const [name, apiUrl, apiKey] = row.split('|').map(part => part?.trim());
                   if (name && apiUrl && apiKey) {
-                    addProvider({ name, apiUrl, apiKey, isActive: true });
+                    addProvider({ name, apiUrl, apiKey, proxyUrl: 'https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy', isActive: true });
                     added += 1;
                   }
                 });
@@ -802,7 +946,7 @@ export const AdminPanelView: React.FC = () => {
                   <div className="flex items-center justify-between bg-purple-950/40 border border-purple-500/30 p-3 rounded-xl font-mono text-xs">
                     <span className="text-purple-300 font-sans font-bold">الرصيد في السيرفر:</span>
                     <strong className="text-emerald-400 font-bold text-sm">
-                      {p.balance !== undefined ? `${p.balance} ${p.currency || '$'}` : 'غير معروف'}
+                      {p.apiKey && p.balance !== undefined ? `${p.balance} ${p.currency || '$'}` : 'اضغط تحديث الرصيد'}
                     </strong>
                   </div>
                 </div>
@@ -834,6 +978,7 @@ export const AdminPanelView: React.FC = () => {
                         setProvName(p.name);
                         setProvUrl(p.apiUrl);
                         setProvKey(p.apiKey);
+                        setProvProxyUrl(p.proxyUrl || 'https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy');
                         setShowAddProvModal(true);
                       }}
                       className="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-xl transition-all"
@@ -1463,16 +1608,16 @@ export const AdminPanelView: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
                 <label className="flex items-center gap-2 text-xs font-bold text-emerald-400 cursor-pointer">
                   <input type="checkbox" checked={dbAutoSync} onChange={e => setDbAutoSync(e.target.checked)} className="accent-emerald-500" />
-                  <span>رفع البيانات تلقائياً إلى Supabase كل ثانية</span>
+                  <span>رفع البيانات تلقائياً إلى Supabase بطريقة مستقرة</span>
                 </label>
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">Interval ms</label>
                   <input
                     type="number"
-                    min={1000}
+                    min={5000}
                     step={1000}
                     value={dbAutoSyncMs}
-                    onChange={e => setDbAutoSyncMs(Math.max(1000, Number(e.target.value)))}
+                    onChange={e => setDbAutoSyncMs(Math.max(5000, Number(e.target.value)))}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono text-left"
                     dir="ltr"
                   />
@@ -1482,16 +1627,16 @@ export const AdminPanelView: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4">
                 <label className="flex items-center gap-2 text-xs font-bold text-blue-400 cursor-pointer">
                   <input type="checkbox" checked={dbAutoPull} onChange={e => setDbAutoPull(e.target.checked)} className="accent-blue-500" />
-                  <span>تحميل البيانات تلقائياً من Supabase كل ثانية</span>
+                  <span>تحميل البيانات تلقائياً من Supabase بطريقة مستقرة</span>
                 </label>
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">Download interval ms</label>
                   <input
                     type="number"
-                    min={1000}
+                    min={15000}
                     step={1000}
                     value={dbAutoPullMs}
-                    onChange={e => setDbAutoPullMs(Math.max(1000, Number(e.target.value)))}
+                    onChange={e => setDbAutoPullMs(Math.max(15000, Number(e.target.value)))}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono text-left"
                     dir="ltr"
                   />
@@ -1509,9 +1654,9 @@ export const AdminPanelView: React.FC = () => {
                       tableName: dbTable.trim() || 'flexapanel_data',
                       isEnabled: true,
                       autoSyncEnabled: dbAutoSync,
-                      autoSyncIntervalMs: Math.max(1000, Number(dbAutoSyncMs || 1000)),
+                      autoSyncIntervalMs: Math.max(5000, Number(dbAutoSyncMs || 5000)),
                       autoPullEnabled: dbAutoPull,
-                      autoPullIntervalMs: Math.max(1000, Number(dbAutoPullMs || 1000)),
+                      autoPullIntervalMs: Math.max(15000, Number(dbAutoPullMs || 15000)),
                       lastSync: settings.database?.lastSync
                     }
                   })}
@@ -1521,7 +1666,7 @@ export const AdminPanelView: React.FC = () => {
                 </button>
                 <button onClick={testDatabaseConnection} className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold px-4 py-2.5 rounded-xl text-xs border border-emerald-500/30 transition-all">اختبار الاتصال</button>
                 <button onClick={() => uploadDatabaseSnapshot()} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all">رفع كل البيانات إلى Supabase</button>
-                <button onClick={downloadDatabaseSnapshot} className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2.5 rounded-xl text-xs border border-slate-700 transition-all">تحميل البيانات من Supabase</button>
+                <button onClick={() => downloadDatabaseSnapshot()} className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2.5 rounded-xl text-xs border border-slate-700 transition-all">تحميل البيانات من Supabase</button>
               </div>
 
               <div className="bg-black/30 border border-slate-700 rounded-xl p-3 text-xs text-slate-300">
@@ -2073,9 +2218,9 @@ with check (true);`}</pre>
               e.preventDefault();
               if (!provName.trim() || !provUrl.trim() || !provKey.trim()) return;
               if (editProvId) {
-                updateProvider(editProvId, { name: provName.trim(), apiUrl: provUrl.trim(), apiKey: provKey.trim() });
+                updateProvider(editProvId, { name: provName.trim(), apiUrl: provUrl.trim(), apiKey: provKey.trim(), proxyUrl: provProxyUrl.trim() || undefined, balance: undefined, currency: undefined });
               } else {
-                addProvider({ name: provName.trim(), apiUrl: provUrl.trim(), apiKey: provKey.trim(), isActive: true });
+                addProvider({ name: provName.trim(), apiUrl: provUrl.trim(), apiKey: provKey.trim(), proxyUrl: provProxyUrl.trim() || undefined, isActive: true });
               }
               setShowAddProvModal(false);
             }} className="space-y-4">
@@ -2116,6 +2261,19 @@ with check (true);`}</pre>
                   dir="ltr"
                   required
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">Proxy URL</label>
+                <input
+                  type="url"
+                  value={provProxyUrl}
+                  onChange={e => setProvProxyUrl(e.target.value)}
+                  placeholder="https://iinakypsmwooxnjmmvfz.supabase.co/functions/v1/smm-proxy"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono text-left"
+                  dir="ltr"
+                />
+                <span className="text-[10px] text-amber-400 block mt-1">الحل النهائي: انشر Supabase Edge Function smm-proxy ثم استعمل هذا الرابط.</span>
               </div>
 
               <div className="flex gap-2 pt-2">
